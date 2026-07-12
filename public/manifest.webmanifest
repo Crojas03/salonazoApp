@@ -1,0 +1,18 @@
+{
+  "name": "El Sazón Delivery",
+  "short_name": "El Sazón",
+  "description": "Pide comida a domicilio desde El Sazón",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#f97316",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
