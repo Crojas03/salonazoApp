@@ -1,44 +1,36 @@
-import { useRef } from 'react';
-import type { Category } from '../lib/supabase';
-import { CategoryIcon } from './CategoryIcon';
+import { useState } from 'react';
+import { X, Plus, Minus, Trash2, ShoppingBag, NotebookPen, Tag, CheckCircle2, XCircle } from 'lucide-react';
+import type { CartItem } from '../lib/supabase';
+import { useBcvRate } from '../hooks/useBcvRate';
+import type { CouponResult } from '../hooks/useCart';
 
-type Props = {
-  categories: Category[];
-  activeCategory: string | null;
-  onSelect: (slug: string) => void;
+type P = {
+  open: boolean; items: CartItem[]; subtotal: number; discount: number;
+  coupon: (CouponResult & { valid: true }) | null; deliveryFee: number; total: number;
+  notas: string; onNotasChange: (v: string) => void;
+  onClose: () => void; onIncrement: (id: string) => void; onDecrement: (id: string) => void;
+  onRemove: (id: string) => void; onCheckout: () => void;
+  onRedeemCoupon: (c: string) => CouponResult; onRemoveCoupon: () => void;
 };
 
-export function CategoryTabs({ categories, activeCategory, onSelect }: Props) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-
+export function CartSheet({ open, items, subtotal, discount, coupon, deliveryFee, total, notas, onNotasChange, onClose, onIncrement, onDecrement, onRemove, onCheckout, onRedeemCoupon, onRemoveCoupon }: P) {
+  const [ci, setCi] = useState(''); const [ce, setCe] = useState('');
+  const { rate } = useBcvRate();
+  const apply = () => { if (!ci.trim()) return; const r = onRedeemCoupon(ci); if (!r.valid) setCe(r.error); else { setCe(''); setCi(''); } };
   return (
-    <div className="sticky top-[61px] z-20 bg-white/80 backdrop-blur-xl border-b border-gray-100">
-      <div
-        ref={scrollRef}
-        className="flex gap-2 overflow-x-auto px-4 py-3 scrollbar-hide"
-        style={{ scrollbarWidth: 'none' }}
-      >
-        {categories.map((cat) => {
-          const isActive = activeCategory === cat.slug;
-          return (
-            <button
-              key={cat.id}
-              onClick={() => onSelect(cat.slug)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 active:scale-95 ${
-                isActive
-                  ? 'bg-gray-900 text-white shadow-md'
-                  : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              <CategoryIcon
-                name={cat.icon}
-                className={`w-4 h-4 ${isActive ? 'text-orange-400' : 'text-gray-400'}`}
-              />
-              {cat.name}
-            </button>
-          );
-        })}
+    <>
+      <div className={`fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={onClose} />
+      <div className={`fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl shadow-2xl flex flex-col transition-transform duration-300 ${open ? 'translate-y-0' : 'translate-y-full'}`} style={{ maxHeight: '90vh' }}>
+        <div className="pt-3 pb-1 flex justify-center"><div className="w-10 h-1.5 rounded-full bg-gray-200" /></div>
+        <div className="px-5 py-3 flex items-center justify-between border-b border-gray-50"><div className="flex items-center gap-2"><ShoppingBag className="w-5 h-5 text-gray-700" /><h2 className="text-lg font-bold text-gray-900">Tu carrito</h2>{items.length > 0 && <span className="text-sm text-gray-400">({items.reduce((s, i) => s + i.quantity, 0)})</span>}</div><button onClick={onClose} className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center active:scale-90 transition-all"><X className="w-5 h-5 text-gray-500" /></button></div>
+        <div className="flex-1 overflow-y-auto px-5 py-3">{items.length === 0 ? <div className="flex flex-col items-center justify-center py-16"><div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4"><ShoppingBag className="w-8 h-8 text-gray-300" /></div><p className="text-gray-400 font-medium">Tu carrito está vacío</p></div> : <div className="space-y-3">{items.map(it => <div key={it.product.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0"><div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100">{it.product.image_url ? <img src={it.product.image_url} alt={it.product.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🍽</div>}</div><div className="flex-1 min-w-0"><h4 className="font-semibold text-gray-900 text-sm truncate">{it.product.name}</h4><p className="text-sm font-bold text-orange-500">${(Number(it.product.price) * it.quantity).toFixed(2)}</p></div><div className="flex items-center gap-1.5"><button onClick={() => onDecrement(it.product.id)} className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center active:scale-90 transition-all"><Minus className="w-3.5 h-3.5 text-gray-600" strokeWidth={2.5} /></button><span className="w-6 text-center font-bold text-gray-900 text-sm">{it.quantity}</span><button onClick={() => onIncrement(it.product.id)} className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center active:scale-90 transition-all"><Plus className="w-3.5 h-3.5 text-gray-600" strokeWidth={2.5} /></button><button onClick={() => onRemove(it.product.id)} className="w-8 h-8 rounded-lg hover:bg-red-50 flex items-center justify-center active:scale-90 transition-all ml-1"><Trash2 className="w-4 h-4 text-red-400" /></button></div></div>)}</div>}</div>
+        {items.length > 0 && <div className="px-5 pt-3 pb-6 border-t border-gray-100 space-y-4">
+          <div><label className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase mb-2"><NotebookPen className="w-3.5 h-3.5" /> Notas</label><textarea rows={2} value={notas} onChange={e => onNotasChange(e.target.value)} placeholder="Ej: Sin cebolla..." maxLength={300} className="w-full px-3.5 py-2.5 rounded-xl bg-amber-50 border border-amber-100 text-sm focus:outline-none focus:border-amber-300 resize-none" /></div>
+          <div><label className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase mb-2"><Tag className="w-3.5 h-3.5" /> Cupón</label>{coupon ? <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5"><div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-500" /><div><p className="text-xs font-bold text-emerald-700">{coupon.code}</p><p className="text-[11px] text-emerald-600">{coupon.description}</p></div></div><button onClick={() => { onRemoveCoupon(); setCi(''); setCe(''); }} className="w-7 h-7 rounded-lg hover:bg-emerald-100 flex items-center justify-center"><X className="w-4 h-4 text-emerald-500" /></button></div> : <div className="space-y-1.5"><div className="flex gap-2"><input value={ci} onChange={e => { setCi(e.target.value.toUpperCase()); setCe(''); }} onKeyDown={e => e.key === 'Enter' && apply()} placeholder="BIENVENIDO" maxLength={20} className={`flex-1 px-3.5 py-2.5 rounded-xl border text-sm font-mono focus:outline-none ${ce ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'}`} /><button onClick={apply} disabled={!ci.trim()} className="px-4 py-2.5 rounded-xl bg-gray-900 text-white text-sm font-bold active:scale-95 disabled:opacity-30">Aplicar</button></div>{ce && <div className="flex items-center gap-1.5 text-[11px] text-red-500"><XCircle className="w-3.5 h-3.5" /> {ce}</div>}</div>}</div>
+          <div className="space-y-1.5"><div className="flex justify-between text-sm"><span className="text-gray-400">Subtotal</span><span className="font-semibold text-gray-700">${subtotal.toFixed(2)}</span></div>{discount > 0 && <div className="flex justify-between text-sm"><span className="text-emerald-600">Descuento</span><span className="font-bold text-emerald-600">-${discount.toFixed(2)}</span></div>}<div className="flex justify-between text-sm"><span className="text-gray-400">Envío</span><span className="font-semibold text-gray-700">{deliveryFee > 0 ? `$${deliveryFee.toFixed(2)}` : 'En checkout'}</span></div><div className="flex justify-between pt-2 border-t border-gray-100 items-end"><span className="font-bold text-gray-900">Total</span><div className="text-right"><span className="font-black text-lg text-orange-500">${total.toFixed(2)}</span><p className="text-[10px] text-gray-400">Bs. {(total * rate).toFixed(2)}</p></div></div></div>
+          <button onClick={onCheckout} className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-base active:scale-[0.98] transition-all shadow-lg shadow-orange-500/30">Continuar al pago</button>
+        </div>}
       </div>
-    </div>
+    </>
   );
 }
