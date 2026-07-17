@@ -434,223 +434,113 @@ function NotifEditor({ template, onClose, onSaved, saving, setSaving }: { templa
 }
 
 // ─── Tasa BCV Consensus Tab ─────────────────────────────────────────────────
-
 function TasaBcvTab({ profile }: { profile: UserProfile }) {
-
   const { rateData, loading, runConsensus, approveRate } = useBcvRate();
-
   const [manualRate, setManualRate] = useState('');
-
   const [approving, setApproving] = useState(false);
-
   const [running, setRunning] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
 
-
-
   const handleRun = async () => {
-
     setRunning(true); setError(null);
-
     try { await runConsensus(); } catch { setError('Error al ejecutar verificación'); }
-
     finally { setRunning(false); }
-
   };
-
-
 
   const handleApprove = async () => {
-
     const rate = Number(manualRate);
-
     if (!Number.isFinite(rate) || rate <= 0) { setError('Ingrese una tasa válida'); return; }
-
     setApproving(true); setError(null);
-
     try { await approveRate(rate, profile?.phone ?? 'admin'); setManualRate(''); } catch { setError('Error al aprobar tasa'); }
-
     finally { setApproving(false); }
-
   };
-
-
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-orange-500 animate-spin" /></div>;
 
-
-
   const statusLabel = rateData.status === 'locked' ? 'Bloqueada (Consenso)' : rateData.status === 'manual' ? 'Aprobada Manualmente' : 'Pendiente de Aprobación';
-
   const statusColor = rateData.status === 'locked' ? 'text-emerald-400' : rateData.status === 'manual' ? 'text-blue-400' : 'text-amber-400';
 
-
-
   return (
-
     <div className="space-y-4">
-
       {rateData.alert_active && (
-
         <div className="bg-red-950/40 border border-red-900/60 rounded-2xl p-4 space-y-3">
-
           <div className="flex items-start gap-3">
-
             <div className="w-10 h-10 rounded-xl bg-red-900/50 flex items-center justify-center flex-shrink-0"><AlertTriangle className="w-5 h-5 text-red-400" /></div>
-
             <div className="flex-1">
-
               <h3 className="text-sm font-black text-red-300 mb-1">Alerta de Discrepancia de Tasa</h3>
-
               <p className="text-xs text-red-400/80 leading-relaxed">No se logró quórum automático entre las fuentes. Por favor, verifique la tasa real del BCV y apruébela manualmente para continuar.</p>
-
             </div>
-
           </div>
-
           <div className="flex gap-2">
-
             <input type="number" step="0.01" inputMode="decimal" value={manualRate} onChange={e => setManualRate(e.target.value)} placeholder="Tasa BCV (Bs.)" className="flex-1 px-3.5 py-3 rounded-xl bg-gray-800 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500" />
-
             <button onClick={handleApprove} disabled={approving} className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm active:scale-[0.98] disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">{approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Aprobar Tasa</>}</button>
-
           </div>
-
           {error && <p className="text-xs text-red-400">{error}</p>}
-
         </div>
-
       )}
-
-
 
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-4">
-
         <div className="flex items-center justify-between">
-
           <div className="flex items-center gap-2.5">
-
             <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center"><BadgePercent className="w-5 h-5 text-orange-500" /></div>
-
             <div>
-
               <h3 className="text-sm font-black text-white">Tasa BCV Oficial</h3>
-
               <p className="text-[10px] text-gray-500">Sistema de consenso multi-fuente</p>
-
             </div>
-
           </div>
-
           <button onClick={handleRun} disabled={running} className="w-9 h-9 rounded-xl bg-gray-800 hover:bg-gray-700 flex items-center justify-center active:scale-90 disabled:opacity-50">{running ? <Loader2 className="w-4 h-4 text-orange-500 animate-spin" /> : <RefreshCw className="w-4 h-4 text-gray-400" />}</button>
-
         </div>
-
-
 
         <div className="flex items-end gap-2">
-
           <span className="text-4xl font-black text-white tabular-nums">{rateData.rate.toFixed(2)}</span>
-
           <span className="text-sm font-bold text-gray-500 mb-1.5">Bs./USD</span>
-
         </div>
-
-
 
         <div className="flex items-center gap-2 flex-wrap">
-
           <span className={`text-xs font-bold ${statusColor}`}>{statusLabel}</span>
-
           {rateData.status === 'locked' && <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-bold"><Lock className="w-3 h-3" /> Congelada</span>}
-
           {rateData.weekend && <span className="text-[10px] text-blue-400 font-bold bg-blue-950/40 px-2 py-0.5 rounded">Fin de semana (tasa del viernes)</span>}
-
         </div>
-
-
 
         <div className="text-[10px] text-gray-500">
-
           Fecha de tasa: <span className="font-bold text-gray-400">{rateData.rate_date || '—'}</span>
-
           {rateData.last_verified_at && <span className="ml-3">Verificada: {new Date(rateData.last_verified_at).toLocaleString('es-VE')}</span>}
-
           {rateData.approved_by && <span className="ml-3">Por: {rateData.approved_by}</span>}
-
         </div>
-
       </div>
-
-
 
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-3">
-
         <h3 className="text-sm font-black text-white flex items-center gap-2"><Radio className="w-4 h-4 text-orange-500" /> Fuentes de Verificación</h3>
-
-        <p className="text-[10px] text-gray-500">Consenso alcanzado con {rateData.consensus_count}/4 fuentes. Se requiere mínimo 3 para bloqueo automático.</p>
-
+        <p className="text-[10px] text-gray-500">Consenso analizado sobre {rateData.consensus_count}/3 fuentes activas. Se requiere que al menos 2 coincidan plenamente.</p>
         <div className="space-y-2">
-
-          {['DolarApi', 'MonitorDivisas', 'DolarVzla', 'CotizaVe'].map(name => {
-
-            const sourceObj = rateData.sources?.[name]; const val = typeof sourceObj === "object" && sourceObj !== null ? sourceObj.rate : sourceObj;
-
+          {['DolarApi', 'MonitorDivisas', 'PyDolarVzla'].map(name => {
+            const sourceObj = rateData.sources?.[name]; 
+            const val = typeof sourceObj === "object" && sourceObj !== null ? sourceObj.rate : sourceObj;
             const isMatch = rateData.matching_sources?.includes(name);
-
             return (
-
               <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-gray-800/50 border border-gray-800">
-
                 <div className="flex items-center gap-2.5">
-
                   <div className={`w-2 h-2 rounded-full ${val !== null && val !== undefined ? (isMatch ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-red-500'}`} />
-
                   <span className="text-xs font-bold text-white">{name}</span>
-
                 </div>
-
                 <span className={`text-sm font-black tabular-nums ${val !== null && val !== undefined ? 'text-gray-200' : 'text-red-500'}`}>{val !== null && val !== undefined ? `${Number(val || 0).toFixed(2)} Bs.` : 'Sin datos'}</span>
-
               </div>
-
             );
-
           })}
-
         </div>
-
       </div>
 
-
-
       {!rateData.alert_active && (
-
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-3">
-
           <h3 className="text-sm font-black text-white">Aprobación Manual</h3>
-
           <p className="text-[10px] text-gray-500">Use solo si necesita corregir la tasa fuera del ciclo de consenso automático.</p>
-
           <div className="flex gap-2">
-
             <input type="number" step="0.01" inputMode="decimal" value={manualRate} onChange={e => setManualRate(e.target.value)} placeholder="Nueva tasa (Bs.)" className="flex-1 px-3.5 py-3 rounded-xl bg-gray-800 border border-gray-700 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-orange-500" />
-
             <button onClick={handleApprove} disabled={approving} className="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 text-white font-bold text-sm active:scale-[0.98] disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">{approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4" /> Aprobar</>}</button>
-
           </div>
-
           {error && <p className="text-xs text-red-400">{error}</p>}
-
         </div>
-
       )}
-
     </div>
-
   );
-
-}
-
 }
