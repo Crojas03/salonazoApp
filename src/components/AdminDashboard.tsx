@@ -509,12 +509,13 @@ function TasaBcvTab({ profile }: { profile: UserProfile }) {
         </div>
       </div>
 
+      {/* --- CAMBIO: Sección de Fuentes Dinámica y Mensajes Ajustados --- */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-3">
         <h3 className="text-sm font-black text-white flex items-center gap-2"><Radio className="w-4 h-4 text-orange-500" /> Fuentes de Verificación</h3>
-        <p className="text-[10px] text-gray-500">Consenso alcanzado con {rateData.consensus_count}/4 fuentes. Se requiere mínimo 3 para bloqueo automático.</p>
+        <p className="text-[10px] text-gray-500">Consenso alcanzado con {rateData.consensus_count}/3 fuentes. Se requiere mínimo 2 para bloqueo automático.</p>
         <div className="space-y-2">
-          {['DolarApi', 'MonitorDivisas', 'DolarVzla', 'CotizaVe'].map(name => {
-            const sourceObj = rateData.sources?.[name]; const val = typeof sourceObj === "object" && sourceObj !== null ? sourceObj.rate : sourceObj;
+          {rateData.sources && Object.entries(rateData.sources).map(([name, sourceObj]) => {
+            const val = typeof sourceObj === "object" && sourceObj !== null ? (sourceObj as any).rate : sourceObj;
             const isMatch = rateData.matching_sources?.includes(name);
             return (
               <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-gray-800/50 border border-gray-800">
