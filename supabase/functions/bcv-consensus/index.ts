@@ -13,8 +13,7 @@ const supabase = createClient(
 
 type SourceResult = { name: string; rate: number | null; error: string | null };
 
-// --- Source 1: DolarApi Oficial (JSON API — confirmed working) ---
-// Returns { promedio: 727.4512, venta: null, compra: null, ... }
+// --- Fuente 1: DolarApi Oficial (JSON API) ---
 async function fetchDolarApiOficial(): Promise<SourceResult> {
   try {
     const resp = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", {
@@ -24,15 +23,14 @@ async function fetchDolarApiOficial(): Promise<SourceResult> {
     if (!resp.ok) return { name: "DolarApi", rate: null, error: `HTTP ${resp.status}` };
     const data = await resp.json();
     const rate = Number(data.promedio ?? data.venta ?? data.compra);
-    if (!Number.isFinite(rate) || rate <= 0) return { name: "DolarApi", rate: null, error: "Invalid rate" };
+    if (!Number.isFinite(rate) || rate <= 0) return { name: "DolarApi", rate: null, error: "Tasa inválida" };
     return { name: "DolarApi", rate: Math.round(rate * 100) / 100, error: null };
   } catch (e) {
     return { name: "DolarApi", rate: null, error: e instanceof Error ? e.message : "Unknown" };
   }
 }
 
-// --- Source 2: Monitor de Divisas Venezuela (HTML scraping) ---
-// The site https://www.monitordedivisavenezuela.com embeds the BCV rate in HTML.
+// --- Fuente 2: Monitor de Divisas Venezuela (HTML Scraping) ---
 async function fetchMonitorDivisas(): Promise<SourceResult> {
   try {
     const resp = await fetch("https://www.monitordedivisavenezuela.com/", {
@@ -42,14 +40,9 @@ async function fetchMonitorDivisas(): Promise<SourceResult> {
     if (!resp.ok) return { name: "MonitorDivisas", rate: null, error: `HTTP ${resp.status}` };
     const html = await resp.text();
 
-    // Try multiple regex patterns to extract the BCV rate
-    // Pattern 1: Look for "BCV" followed by a number
     const patterns = [
       /(?:bcv|oficial)[^0-9]{0,50}(\d{2,3}[,.]\d{2,4})/i,
       /(?:tasa|cambio|dolar)[^0-9]{0,30}(\d{2,3}[,.]\d{2,4})/i,
-      /"rate"\s*:\s*(\d+\.?\d*)/i,
-      /"bcv"\s*:\s*(\d+\.?\d*)/i,
-      /data-rate="(\d+\.?\d*)"/i,
     ];
 
     for (const p of patterns) {
@@ -61,83 +54,28 @@ async function fetchMonitorDivisas(): Promise<SourceResult> {
         }
       }
     }
-    return { name: "MonitorDivisas", rate: null, error: "No rate found in HTML" };
+    return { name: "MonitorDivisas", rate: null, error: "No se encontró tasa" };
   } catch (e) {
     return { name: "MonitorDivisas", rate: null, error: e instanceof Error ? e.message : "Unknown" };
   }
 }
 
-// --- Source 3: PyDolar API (try multiple endpoints) ---
-async function fetchPyDolar(): Promise<SourceResult> {
-  const urls = [
-    "https://api.pydolar.net/v1/dolares/bcv",
-    "https://api.pydolar.net/api/v1/dolares/bcv",
-    "https://pydolar.net/api/v1/dolares/bcv",
-  ];
-  for (const url of urls) {
-    try {
-      const resp = await fetch(url, {
-        signal: AbortSignal.timeout(6000),
-        headers: { "Accept": "application/json" },
-      });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const rate = Number(
-        data.tasa ?? data.venta ?? data.price ?? data.promedio ??
-        data.bcv ?? data.dolar ?? data.usd ??
-        (Array.isArray(data) && data[0] ? (data[0].tasa ?? data[0].venta ?? data[0].price) : null)
-      );
-      if (Number.isFinite(rate) && rate > 0) {
-        return { name: "PyDolar", rate: Math.round(rate * 100) / 100, error: null };
-      }
-    } catch { /* try next URL */ }
-  }
-  return { name: "PyDolar", rate: null, error: "All endpoints failed" };
+// --- Fuente 3: DolarVzla (Removida / Endpoint Desactivado) ---
+async function fetchDolarVzla(): Promise<SourceResult> {
+  return { name: "DolarVzla", rate: null, error: "Endpoint obsoleto" };
 }
 
-// --- Source 4: BCV Website (HTML scraping — the original source) ---
-async function fetchBCVWebsite(): Promise<SourceResult> {
-  try {
-    const resp = await fetch("https://www.bcv.org.ve/", {
-      signal: AbortSignal.timeout(8000),
-      headers: {
-        "Accept": "text/html,application/xhtml+xml",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
-    if (!resp.ok) return { name: "BCVWebsite", rate: null, error: `HTTP ${resp.status}` };
-    const html = await resp.text();
-
-    // BCV site embeds rates in HTML — try multiple patterns
-    const patterns = [
-      /dolar[^0-9]{0,100}(\d{1,3}[,.]\d{2,4})/i,
-      /USD[^0-9]{0,100}(\d{1,3}[,.]\d{2,4})/i,
-      /"dolar"\s*:\s*"?(\d+[,.]?\d*)"?/i,
-      /tipo-de-cambio[^0-9]{0,100}(\d{1,3}[,.]\d{2,4})/i,
-      /field-item[^0-9]{0,30}(\d{1,3}[,.]\d{2,4})/i,
-    ];
-
-    for (const p of patterns) {
-      const m = html.match(p);
-      if (m) {
-        const rate = Number(m[1].replace(",", "."));
-        if (Number.isFinite(rate) && rate > 50 && rate < 2000) {
-          return { name: "BCVWebsite", rate: Math.round(rate * 100) / 100, error: null };
-        }
-      }
-    }
-    return { name: "BCVWebsite", rate: null, error: "No rate found in HTML" };
-  } catch (e) {
-    return { name: "BCVWebsite", rate: null, error: e instanceof Error ? e.message : "Unknown" };
-  }
+// --- Fuente 4: CotizaVe (Removida / Endpoint Desactivado) ---
+async function fetchCotizaVe(): Promise<SourceResult> {
+  return { name: "CotizaVe", rate: null, error: "Endpoint obsoleto" };
 }
 
 async function fetchAllSources(): Promise<SourceResult[]> {
   return Promise.all([
     fetchDolarApiOficial(),
     fetchMonitorDivisas(),
-    fetchPyDolar(),
-    fetchBCVWebsite(),
+    fetchDolarVzla(),
+    fetchCotizaVe(),
   ]);
 }
 
@@ -145,15 +83,14 @@ function computeConsensus(results: SourceResult[]) {
   const valid = results.filter((r) => r.rate !== null);
   if (valid.length === 0) return { consensusRate: null as number | null, consensusCount: 0, matches: [] as string[] };
 
-  // Group rates that are within 0.50 of each other (tolerance for rounding differences)
   const tolerance = 0.50;
   const groups: { rate: number; sources: string[] }[] = [];
+  
   for (const r of valid) {
     const rounded = Math.round(r.rate! * 100) / 100;
     const existing = groups.find((g) => Math.abs(g.rate - rounded) <= tolerance);
     if (existing) {
       existing.sources.push(r.name);
-      // Update to average of matching sources
       existing.rate = Math.round((existing.rate + rounded) / 2 * 100) / 100;
     } else {
       groups.push({ rate: rounded, sources: [r.name] });
@@ -165,8 +102,9 @@ function computeConsensus(results: SourceResult[]) {
     if (g.sources.length > best.sources.length) best = g;
   }
 
+  // REGLA ESTRICTA DE CONSENSO: Mínimo 3 fuentes idénticas obligatorias
   return {
-    consensusRate: best.sources.length >= 2 ? best.rate : null,
+    consensusRate: best.sources.length >= 3 ? best.rate : null,
     consensusCount: best.sources.length,
     matches: best.sources,
   };
@@ -205,14 +143,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // POST: manual approval
+    // --- MANEJO DE ACCIONES POR POST ---
     if (req.method === "POST") {
       const body = await req.json();
+
+      // 1. Aprobación manual por el administrador
       if (body.action === "approve") {
         const rate = Number(body.rate);
         const approvedBy = String(body.approved_by ?? "admin");
         if (!Number.isFinite(rate) || rate <= 0) {
-          return new Response(JSON.stringify({ error: "Invalid rate" }), {
+          return new Response(JSON.stringify({ error: "Tasa inválida" }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
@@ -236,18 +176,21 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // POST: force refresh (admin triggers re-fetch from all sources)
+      // 2. Forzar refresco (Ejecutado por el botón circular de la interfaz)
       if (body.action === "refresh") {
         const results = await fetchAllSources();
         const { consensusRate, consensusCount, matches } = computeConsensus(results);
+        
         const sourcesMap: Record<string, number | null> = {};
         for (const r of results) sourcesMap[r.name] = r.rate;
+        
         const veDate = getVeDate();
         const todayStr = veDate.toISOString().split("T")[0];
         const existing = await readSetting();
         const existingRate = existing ? Number(existing.rate) : 0;
 
-        if (consensusRate !== null && consensusCount >= 2) {
+        // VERIFICACIÓN ESTRICTA (Mínimo 3 fuentes)
+        if (consensusRate !== null && consensusCount >= 3) {
           const value = {
             rate: consensusRate,
             rate_date: todayStr,
@@ -260,36 +203,12 @@ Deno.serve(async (req: Request) => {
             last_verified_at: new Date().toISOString(),
           };
           await writeSetting(value);
-          return new Response(JSON.stringify(value), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } else {
-          // Check variance: if best rate is within 15% of existing, accept it
-          const bestValid = results.find((r) => r.rate !== null);
-          if (bestValid && existingRate > 0) {
-            const variance = Math.abs(bestValid.rate! - existingRate) / existingRate;
-            if (variance <= 0.15) {
-              const value = {
-                rate: bestValid.rate!,
-                rate_date: todayStr,
-                status: "locked",
-                consensus_count: 1,
-                sources: sourcesMap,
-                matching_sources: [bestValid.name],
-                alert_active: false,
-                approved_by: null,
-                last_verified_at: new Date().toISOString(),
-              };
-              await writeSetting(value);
-              return new Response(JSON.stringify(value), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-              });
-            }
-          }
-          // Consensus failed: keep old rate, raise alert
+          // Si da 2/4, entra aquí directamente eliminando los fallbacks automáticos de varianza
           const value = {
-            rate: existingRate > 0 ? existingRate : 145.5,
-            rate_date: existing?.rate_date ?? todayStr,
+            rate: existingRate > 0 ? existingRate : 45.5,
+            rate_date: todayStr, // Actualizamos la fecha a hoy para que registre el intento fallido de hoy
             status: "pending_approval",
             consensus_count: consensusCount,
             sources: sourcesMap,
@@ -299,14 +218,12 @@ Deno.serve(async (req: Request) => {
             last_verified_at: new Date().toISOString(),
           };
           await writeSetting(value);
-          return new Response(JSON.stringify(value), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
     }
 
-    // GET: consensus check
+    // --- MANEJO DE CONSULTA ORDINARIA POR GET ---
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "true";
 
@@ -316,18 +233,16 @@ Deno.serve(async (req: Request) => {
     const existing = await readSetting();
     const existingRate = existing ? Number(existing.rate) : 0;
 
-    // Already locked for today? Return it (unless force refresh).
+    // Si ya existe registro de hoy y está verificado, se sirve directo (a menos que se use ?force=true)
     if (!force && existing && existing.rate_date === todayStr && (existing.status === "locked" || existing.status === "manual")) {
-      return new Response(JSON.stringify(existing), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify(existing), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Weekend rule: use Friday's rate, don't fetch
+    // Regla de fin de semana
     if (weekend && !force) {
       const fridayStr = lastFridayDate(veDate);
       const value = {
-        rate: existingRate > 0 ? existingRate : 145.5,
+        rate: existingRate > 0 ? existingRate : 45.5,
         rate_date: todayStr,
         status: "locked",
         consensus_count: existing?.consensus_count ?? 0,
@@ -340,19 +255,17 @@ Deno.serve(async (req: Request) => {
         friday_date: fridayStr,
       };
       await writeSetting(value);
-      return new Response(JSON.stringify(value), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Business day (or forced): fetch from all 4 sources in parallel
+    // Consulta en vivo por falta de registros previos o expiración de fecha
     const results = await fetchAllSources();
     const { consensusRate, consensusCount, matches } = computeConsensus(results);
 
     const sourcesMap: Record<string, number | null> = {};
     for (const r of results) sourcesMap[r.name] = r.rate;
 
-    if (consensusRate !== null && consensusCount >= 2) {
+    if (consensusRate !== null && consensusCount >= 3) {
       const value = {
         rate: consensusRate,
         rate_date: todayStr,
@@ -365,36 +278,11 @@ Deno.serve(async (req: Request) => {
         last_verified_at: new Date().toISOString(),
       };
       await writeSetting(value);
-      return new Response(JSON.stringify(value), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } else {
-      // Check variance: if best rate is within 15% of existing, accept it
-      const bestValid = results.find((r) => r.rate !== null);
-      if (bestValid && existingRate > 0) {
-        const variance = Math.abs(bestValid.rate! - existingRate) / existingRate;
-        if (variance <= 0.15) {
-          const value = {
-            rate: bestValid.rate!,
-            rate_date: todayStr,
-            status: "locked",
-            consensus_count: 1,
-            sources: sourcesMap,
-            matching_sources: [bestValid.name],
-            alert_active: false,
-            approved_by: null,
-            last_verified_at: new Date().toISOString(),
-          };
-          await writeSetting(value);
-          return new Response(JSON.stringify(value), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-      // Consensus failed: keep old rate, raise alert
       const value = {
-        rate: existingRate > 0 ? existingRate : 145.5,
-        rate_date: existing?.rate_date ?? todayStr,
+        rate: existingRate > 0 ? existingRate : 45.5,
+        rate_date: todayStr,
         status: "pending_approval",
         consensus_count: consensusCount,
         sources: sourcesMap,
@@ -404,9 +292,7 @@ Deno.serve(async (req: Request) => {
         last_verified_at: new Date().toISOString(),
       };
       await writeSetting(value);
-      return new Response(JSON.stringify(value), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
   } catch (err) {
     return new Response(
