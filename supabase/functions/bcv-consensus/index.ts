@@ -35,7 +35,10 @@ async function fetchMonitorDivisas(): Promise<SourceResult> {
   try {
     const resp = await fetch("https://www.monitordedivisavenezuela.com/", {
       signal: AbortSignal.timeout(8000),
-      headers: { "Accept": "text/html", "User-Agent": "Mozilla/5.0" },
+      headers: { 
+        "Accept": "text/html", 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" 
+      },
     });
     if (!resp.ok) return { name: "MonitorDivisas", rate: null, error: `HTTP ${resp.status}` };
     const html = await resp.text();
@@ -60,22 +63,31 @@ async function fetchMonitorDivisas(): Promise<SourceResult> {
   }
 }
 
-// --- Fuente 3: DolarVzla (Removida / Endpoint Desactivado) ---
-async function fetchDolarVzla(): Promise<SourceResult> {
-  return { name: "DolarVzla", rate: null, error: "Endpoint obsoleto" };
+// --- CAMBIO 1: Fuente 3 integrada con AlCambio API ---
+async function fetchAlCambio(): Promise<SourceResult> {
+  try {
+    const resp = await fetch("https://alcambio.app/api/v1/rates", {
+      signal: AbortSignal.timeout(8000),
+      headers: { "Accept": "application/json" },
+    });
+    if (!resp.ok) return { name: "AlCambio", rate: null, error: `HTTP ${resp.status}` };
+    const data = await resp.json();
+    
+    // AlCambio suele proveer data.bcv o data.usd.bcv.rate según el formato de su JSON público
+    const rate = Number(data.bcv ?? data.rates?.bcv ?? data.usd?.bcv);
+    if (!Number.isFinite(rate) || rate <= 0) return { name: "AlCambio", rate: null, error: "Tasa inválida" };
+    return { name: "AlCambio", rate: Math.round(rate * 100) / 100, error: null };
+  } catch (e) {
+    return { name: "AlCambio", rate: null, error: e instanceof Error ? e.message : "Unknown" };
+  }
 }
 
-// --- Fuente 4: CotizaVe (Removida / Endpoint Desactivado) ---
-async function fetchCotizaVe(): Promise<SourceResult> {
-  return { name: "CotizaVe", rate: null, error: "Endpoint obsoleto" };
-}
-
+// --- CAMBIO 2: Reducción del pool a solo 3 funciones paralelas ---
 async function fetchAllSources(): Promise<SourceResult[]> {
   return Promise.all([
     fetchDolarApiOficial(),
     fetchMonitorDivisas(),
-    fetchDolarVzla(),
-    fetchCotizaVe(),
+    fetchAlCambio(),
   ]);
 }
 
@@ -102,9 +114,9 @@ function computeConsensus(results: SourceResult[]) {
     if (g.sources.length > best.sources.length) best = g;
   }
 
-  // REGLA ESTRICTA DE CONSENSO: Mínimo 3 fuentes idénticas obligatorias
+  // --- CAMBIO 3: Regla del Consenso Reducida a MÍNIMO 2 fuentes idénticas ---
   return {
-    consensusRate: best.sources.length >= 3 ? best.rate : null,
+    consensusRate: best.sources.length >= 2 ? best.rate : null,
     consensusCount: best.sources.length,
     matches: best.sources,
   };
@@ -143,11 +155,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // --- MANEJO DE ACCIONES POR POST ---
     if (req.method === "POST") {
       const body = await req.json();
 
-      // 1. Aprobación manual por el administrador
       if (body.action === "approve") {
         const rate = Number(body.rate);
         const approvedBy = String(body.approved_by ?? "admin");
@@ -176,7 +186,6 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // 2. Forzar refresco (Ejecutado por el botón circular de la interfaz)
       if (body.action === "refresh") {
         const results = await fetchAllSources();
         const { consensusRate, consensusCount, matches } = computeConsensus(results);
@@ -189,8 +198,8 @@ Deno.serve(async (req: Request) => {
         const existing = await readSetting();
         const existingRate = existing ? Number(existing.rate) : 0;
 
-        // VERIFICACIÓN ESTRICTA (Mínimo 3 fuentes)
-        if (consensusRate !== null && consensusCount >= 3) {
+        // --- CAMBIO 4: Validación estricta en POST de mínimo 2 fuentes ---
+        if (consensusRate !== null && consensusCount >= 2) {
           const value = {
             rate: consensusRate,
             rate_date: todayStr,
@@ -205,10 +214,9 @@ Deno.serve(async (req: Request) => {
           await writeSetting(value);
           return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } else {
-          // Si da 2/4, entra aquí directamente eliminando los fallbacks automáticos de varianza
           const value = {
             rate: existingRate > 0 ? existingRate : 45.5,
-            rate_date: todayStr, // Actualizamos la fecha a hoy para que registre el intento fallido de hoy
+            rate_date: todayStr, 
             status: "pending_approval",
             consensus_count: consensusCount,
             sources: sourcesMap,
@@ -223,7 +231,6 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // --- MANEJO DE CONSULTA ORDINARIA POR GET ---
     const url = new URL(req.url);
     const force = url.searchParams.get("force") === "true";
 
@@ -233,12 +240,10 @@ Deno.serve(async (req: Request) => {
     const existing = await readSetting();
     const existingRate = existing ? Number(existing.rate) : 0;
 
-    // Si ya existe registro de hoy y está verificado, se sirve directo (a menos que se use ?force=true)
     if (!force && existing && existing.rate_date === todayStr && (existing.status === "locked" || existing.status === "manual")) {
       return new Response(JSON.stringify(existing), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Regla de fin de semana
     if (weekend && !force) {
       const fridayStr = lastFridayDate(veDate);
       const value = {
@@ -258,14 +263,14 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify(value), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Consulta en vivo por falta de registros previos o expiración de fecha
     const results = await fetchAllSources();
     const { consensusRate, consensusCount, matches } = computeConsensus(results);
 
     const sourcesMap: Record<string, number | null> = {};
     for (const r of results) sourcesMap[r.name] = r.rate;
 
-    if (consensusRate !== null && consensusCount >= 3) {
+    // --- CAMBIO 5: Validación estricta en GET de mínimo 2 fuentes ---
+    if (consensusRate !== null && consensusCount >= 2) {
       const value = {
         rate: consensusRate,
         rate_date: todayStr,
