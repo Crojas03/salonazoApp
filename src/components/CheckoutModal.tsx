@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffec } from 'react';
 import { X, ArrowLeft, Check, Loader2, MapPin, Phone, User, Landmark, Hash, ImagePlus, ChevronDown, Building2, Clock, AlertTriangle, Navigation, Bookmark, CalendarClock, Plus } from 'lucide-react';
 import type { CartItem, Product } from '../lib/supabase';
 import { DELIVERY_ZONES, ZONE_TIER_LABEL, gpsDeliveryFee, haversineKm, RESTAURANT_COORDS } from '../lib/supabase';
