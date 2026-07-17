@@ -513,8 +513,8 @@ function TasaBcvTab({ profile }: { profile: UserProfile }) {
         <h3 className="text-sm font-black text-white flex items-center gap-2"><Radio className="w-4 h-4 text-orange-500" /> Fuentes de Verificación</h3>
         <p className="text-[10px] text-gray-500">Consenso alcanzado con {rateData.consensus_count}/4 fuentes. Se requiere mínimo 3 para bloqueo automático.</p>
         <div className="space-y-2">
-          {['DolarApi', 'MonitorDivisas', 'PyDolar', 'TasaBCV'].map(name => {
-            const val = rateData.sources?.[name];
+          {['DolarApi', 'MonitorDivisas', 'DolarVzla', 'CotizaVe'].map(name => {
+            const sourceObj = rateData.sources?.[name]; const val = typeof sourceObj === "object" && sourceObj !== null ? sourceObj.rate : sourceObj;
             const isMatch = rateData.matching_sources?.includes(name);
             return (
               <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-gray-800/50 border border-gray-800">
@@ -522,7 +522,7 @@ function TasaBcvTab({ profile }: { profile: UserProfile }) {
                   <div className={`w-2 h-2 rounded-full ${val !== null && val !== undefined ? (isMatch ? 'bg-emerald-500' : 'bg-amber-500') : 'bg-red-500'}`} />
                   <span className="text-xs font-bold text-white">{name}</span>
                 </div>
-                <span className={`text-sm font-black tabular-nums ${val !== null && val !== undefined ? 'text-gray-200' : 'text-red-500'}`}>{val !== null && val !== undefined ? `${val.toFixed(2)} Bs.` : 'Sin datos'}</span>
+                <span className={`text-sm font-black tabular-nums ${val !== null && val !== undefined ? 'text-gray-200' : 'text-red-500'}`}>{val !== null && val !== undefined ? `${Number(val || 0).toFixed(2)} Bs.` : 'Sin datos'}</span>
               </div>
             );
           })}
