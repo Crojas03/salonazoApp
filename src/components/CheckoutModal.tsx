@@ -51,7 +51,19 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
       if (error || !ins) { setStatus('error'); setErrMsg(error?.message ?? 'Error'); return; }
       const oid = (ins as { id?: string })?.id; if (!oid) { setStatus('error'); setErrMsg('Respuesta inesperada'); return; }
       if (saveAddr && gps) { try { const l = loadSaved().filter(x => x.label !== addrLabel); localStorage.setItem(SAVED_KEY, JSON.stringify([{ label: addrLabel, lat: gps.lat, lng: gps.lng, ref: form.ref }, ...l].slice(0, 5))); } catch { /* */ } }
-      setStatus('success'); setTimeout(() => { try { onSuccess(oid); } catch { /**/ } setStatus('idle'); setForm({ name: profile?.name ?? '', phone: profile?.phone ?? '', ref: '', pm: 'pago_movil' }); setPF(initPF()); setSs(null); }, 1500);
+      
+      // Mostramos la animación de éxito al usuario
+      setStatus('success'); 
+      
+      // Esperamos 1.5 segundos para que se vea la pantalla de éxito antes de redirigir
+      setTimeout(() => { 
+        try { 
+          onSuccess(oid); 
+        } catch (err) { 
+          console.error("Error al procesar la redirección:", err); 
+        }
+        // NO reseteamos estados ni borramos variables aquí para evitar que se rompa la pantalla
+      }, 1500);
     } catch (err) { setStatus('error'); setErrMsg(err instanceof Error ? err.message : 'Error'); }
   };
   const renderMerchant = (mid: string) => {
