@@ -24,7 +24,7 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
   const [schedType, setSchedType] = useState<'inmediata' | 'programada'>('inmediata'); const [schedDate, setSchedDate] = useState(''); const [schedTime, setSchedTime] = useState('');
   const [ss, setSs] = useState<string | null>(null); const [status, setStatus] = useState<Status>('idle'); const [errMsg, setErrMsg] = useState('');
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null); const [gpsLoading, setGpsLoading] = useState(false); const [gpsErr, setGpsErr] = useState('');
-  if (!open) return null;
+  
   const selZone = DELIVERY_ZONES.find(z => z.id === deliveryZone) ?? null;
   const pzRef = useRef(false);
   useEffect(() => { if (pzRef.current) return; const pz = getProfileZone(profile); if (pz && !deliveryZone) { pzRef.current = true; onZoneChange(pz.id, pz.fee, pz.name); } }, [profile, deliveryZone, onZoneChange]);
@@ -36,6 +36,7 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
   const am = getPaymentMethod(form.pm) ?? null;
   const gfv = (mid: string, fk: string) => pf[mid]?.[fk] ?? '';
   const sfv = (mid: string, fk: string, v: string) => setPF(prev => ({ ...prev, [mid]: { ...(prev[mid] ?? {}), [fk]: v } }));
+  if (!open) return null;
   const buildRef = (m: PaymentMethodConfig | null) => m ? m.fields.map(f => { const v = gfv(m.id, f.key); return v.trim() ? `${f.label}: ${v.trim()}` : ''; }).filter(Boolean).join(' | ') : '';
   const handleGps = () => { if (!navigator.geolocation) { setGpsErr('No soportado'); return; } setGpsLoading(true); setGpsErr(''); navigator.geolocation.getCurrentPosition(p => { setGps({ lat: p.coords.latitude, lng: p.coords.longitude }); setGpsLoading(false); onZoneChange('gps', gpsDeliveryFee(p.coords.latitude, p.coords.longitude), 'GPS'); }, () => { setGpsErr('No se pudo obtener'); setGpsLoading(false); }, { enableHighAccuracy: true, timeout: 10000 }); };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setSs(r.result as string); r.readAsDataURL(f); };
