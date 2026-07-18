@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffec } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { X, ArrowLeft, Check, Loader2, MapPin, Phone, User, Landmark, Hash, ImagePlus, ChevronDown, Building2, Clock, AlertTriangle, Navigation, Bookmark, CalendarClock, Plus } from 'lucide-react';
 import type { CartItem, Product } from '../lib/supabase';
 import { DELIVERY_ZONES, ZONE_TIER_LABEL, gpsDeliveryFee, haversineKm, RESTAURANT_COORDS } from '../lib/supabase';
@@ -8,26 +8,53 @@ import type { UserProfile } from '../hooks/useProfile';
 import { getProfileZone } from '../hooks/useProfile';
 import { PAYMENT_METHODS, getPaymentMethod, BANK_DATA, TRANSFER_DATA, BINANCE_DATA, PAYPAL_DATA, CARD_DATA, type PaymentMethodConfig } from '../lib/payments';
 import { formatPhone } from '../lib/phone';
-function isKitchenOpen() { const n = new Date(); const t = n.getHours() * 60 + n.getMinutes(); return t >= 690 && t < 1350; }
+
+type DayHours = { isOpen: boolean; openTime: string; closeTime: string };
+type BusinessHours = Record<string, DayHours>;
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+function toMinutes(t: string): number | null { const [h, m] = t.split(':').map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null; }
+function format12h(t: string): string { const [h, m] = t.split(':').map(Number); if (!Number.isFinite(h) || !Number.isFinite(m)) return t; const period = h < 12 ? 'AM' : 'PM'; const h12 = h % 12 === 0 ? 12 : h % 12; return `${h12}:${String(m).padStart(2, '0')} ${period}`; }
+
 type SavedAddr = { label: string; lat: number; lng: number; ref: string };
 const SAVED_KEY = 'salonazo_saved_addresses';
 function loadSaved(): SavedAddr[] { try { return JSON.parse(localStorage.getItem(SAVED_KEY) ?? '[]'); } catch { return []; } }
+
 type FormState = { name: string; phone: string; ref: string; pm: string };
 type Status = 'idle' | 'submitting' | 'success' | 'error';
 type PayFields = Record<string, Record<string, string>>;
+
 function initPF(): PayFields { const m: PayFields = {}; for (const pm of PAYMENT_METHODS) { const f: Record<string, string> = {}; for (const fld of pm.fields) f[fld.key] = ''; m[pm.id] = f; } return m; }
+
 type P = { open: boolean; items: CartItem[]; subtotal: number; discount: number; couponCode: string | null; deliveryZone: string | null; notas: string; products: Product[]; onZoneChange: (z: string, f: number, n: string) => void; onClose: () => void; onBack: () => void; onSuccess: (id: string) => void; onAddProduct: (p: Product) => void; profile: UserProfile | null };
+
 export function CheckoutModal({ open, items, subtotal, discount, couponCode, deliveryZone, notas, products, onZoneChange, onClose, onBack, onSuccess, onAddProduct, profile }: P) {
   const [form, setForm] = useState<FormState>({ name: profile?.name ?? '', phone: profile?.phone ?? '', ref: '', pm: 'pago_movil' });
   const { rate } = useBcvRate();
-  const [pf, setPF] = useState<PayFields>(initPF); const [saveAddr, setSaveAddr] = useState(false); const [addrLabel, setAddrLabel] = useState('Casa'); const [saved] = useState<SavedAddr[]>(loadSaved);
-  const [schedType, setSchedType] = useState<'inmediata' | 'programada'>('inmediata'); const [schedDate, setSchedDate] = useState(''); const [schedTime, setSchedTime] = useState('');
-  const [ss, setSs] = useState<string | null>(null); const [status, setStatus] = useState<Status>('idle'); const [errMsg, setErrMsg] = useState('');
-  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null); const [gpsLoading, setGpsLoading] = useState(false); const [gpsErr, setGpsErr] = useState('');
+  const [pf, setPF] = useState<PayFields>(initPF); 
+  const [saveAddr, setSaveAddr] = useState(false); 
+  const [addrLabel, setAddrLabel] = useState('Casa'); 
+  const [saved] = useState<SavedAddr[]>(loadSaved);
+  const [schedType, setSchedType] = useState<'inmediata' | 'programada'>('inmediata'); 
+  const [schedDate, setSchedDate] = useState(''); 
+  const [schedTime, setSchedTime] = useState('');
+  const [ss, setSs] = useState<string | null>(null); 
+  const [status, setStatus] = useState<Status>('idle'); 
+  const [errMsg, setErrMsg] = useState('');
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null); 
+  const [gpsLoading, setGpsLoading] = useState(false); 
+  const [gpsErr, setGpsErr] = useState('');
   
   const selZone = DELIVERY_ZONES.find(z => z.id === deliveryZone) ?? null;
   const pzRef = useRef(false);
+  
   useEffect(() => { if (pzRef.current) return; const pz = getProfileZone(profile); if (pz && !deliveryZone) { pzRef.current = true; onZoneChange(pz.id, pz.fee, pz.name); } }, [profile, deliveryZone, onZoneChange]);
+  
+  const [businessHours, setBusinessHours] = useState<BusinessHours | null>(null);
+  useEffect(() => { let cancelled = false; supabase.from('system_settings').select('value').eq('key', 'business_hours').maybeSingle().then(({ data }) => { if (!cancelled && data?.value) setBusinessHours(data.value as BusinessHours); }); return () => { cancelled = true; }; }, []);
+  
+  const kitchenStatus = (() => { const now = new Date(); const dayName = DAY_NAMES[now.getDay()]; const cur = now.getHours() * 60 + now.getMinutes(); const day = businessHours?.[dayName]; if (day) { if (!day.isOpen) return { open: false, label: 'Cerrado hoy' }; const open = toMinutes(day.openTime); const close = toMinutes(day.closeTime); if (open == null || close == null) return { open: true, label: '' }; return { open: cur >= open && cur < close, label: `${format12h(day.openTime)} - ${format12h(day.closeTime)}` }; } return { open: cur >= 690 && cur < 1350, label: '11:30 AM - 10:30 PM' }; })();
+  
   const fee = gps ? gpsDeliveryFee(gps.lat, gps.lng) : (selZone?.fee ?? 0);
   const label = gps ? `GPS · ${haversineKm(RESTAURANT_COORDS.lat, RESTAURANT_COORDS.lng, gps.lat, gps.lng).toFixed(1)} km` : (selZone?.name ?? '');
   const total = Math.max(0, subtotal - discount + fee);
@@ -36,37 +63,93 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
   const am = getPaymentMethod(form.pm) ?? null;
   const gfv = (mid: string, fk: string) => pf[mid]?.[fk] ?? '';
   const sfv = (mid: string, fk: string, v: string) => setPF(prev => ({ ...prev, [mid]: { ...(prev[mid] ?? {}), [fk]: v } }));
+
   if (!open) return null;
+
   const buildRef = (m: PaymentMethodConfig | null) => m ? m.fields.map(f => { const v = gfv(m.id, f.key); return v.trim() ? `${f.label}: ${v.trim()}` : ''; }).filter(Boolean).join(' | ') : '';
   const handleGps = () => { if (!navigator.geolocation) { setGpsErr('No soportado'); return; } setGpsLoading(true); setGpsErr(''); navigator.geolocation.getCurrentPosition(p => { setGps({ lat: p.coords.latitude, lng: p.coords.longitude }); setGpsLoading(false); onZoneChange('gps', gpsDeliveryFee(p.coords.latitude, p.coords.longitude), 'GPS'); }, () => { setGpsErr('No se pudo obtener'); setGpsLoading(false); }, { enableHighAccuracy: true, timeout: 10000 }); };
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setSs(r.result as string); r.readAsDataURL(f); };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (am) for (const f of am.fields) { const v = gfv(am.id, f.key); if (f.required && !v.trim()) { setStatus('error'); setErrMsg(`Completa: ${f.label}`); return; } }
-      if (!form.name.trim() || !form.phone.trim() || !form.ref.trim()) { setStatus('error'); setErrMsg('Completa todos los datos'); return; }
-      if (!items.length) { setStatus('error'); setErrMsg('Carrito vacío'); return; }
-      setStatus('submitting'); setErrMsg('');
-      const oi = items.map(i => ({ product_id: i.product.id, name: i.product.name, price: Number(i.product.price), quantity: i.quantity }));
-      const { data: ins, error } = await supabase.from('orders').insert({ customer_name: form.name, customer_phone: form.phone, delivery_address: form.ref, delivery_zone: label || 'GPS', payment_method: form.pm, payment_reference: buildRef(am), payment_screenshot_url: ss, items: oi, subtotal: Number(subtotal), delivery_fee: Number(fee), total: Number(total), notas: notas.trim() || null, scheduled_for: schedType === 'programada' && schedDate && schedTime ? `${schedDate}T${schedTime}` : null, status: 'recibido' }).select('id').single();
-      if (error || !ins) { setStatus('error'); setErrMsg(error?.message ?? 'Error'); return; }
-      const oid = (ins as { id?: string })?.id; if (!oid) { setStatus('error'); setErrMsg('Respuesta inesperada'); return; }
-      if (saveAddr && gps) { try { const l = loadSaved().filter(x => x.label !== addrLabel); localStorage.setItem(SAVED_KEY, JSON.stringify([{ label: addrLabel, lat: gps.lat, lng: gps.lng, ref: form.ref }, ...l].slice(0, 5))); } catch { /* */ } }
-      
-      // Mostramos la animación de éxito al usuario
-      setStatus('success'); 
-      
-      // Esperamos 1.5 segundos para que se vea la pantalla de éxito antes de redirigir
-      setTimeout(() => { 
-        try { 
-          onSuccess(oid); 
-        } catch (err) { 
-          console.error("Error al procesar la redirección:", err); 
+    
+    // 1. Validaciones de datos personales
+    if (!form.name.trim() || !form.phone.trim() || !form.ref.trim()) {
+      setStatus('error');
+      setErrMsg('Completa nombre, teléfono y referencia de entrega.');
+      return;
+    }
+    
+    // 2. Validaciones de método de pago
+    if (am) {
+      for (const f of am.fields) {
+        const v = gfv(am.id, f.key);
+        if (f.required && !v.trim()) {
+          setStatus('error');
+          setErrMsg(`Completa el campo: ${f.label}`);
+          return;
         }
-        // NO reseteamos estados ni borramos variables aquí para evitar que se rompa la pantalla
-      }, 1500);
-    } catch (err) { setStatus('error'); setErrMsg(err instanceof Error ? err.message : 'Error'); }
+      }
+      // Si requiere captura (BSV), validar que esté presente
+      if (am.currency === 'BSV' && !ss) {
+        setStatus('error');
+        setErrMsg('Por favor, adjunta la captura de tu pago.');
+        return;
+      }
+    }
+    
+    if (!items.length) { setStatus('error'); setErrMsg('Carrito vacío'); return; }
+    
+    setStatus('submitting'); 
+    setErrMsg('');
+    
+    try {
+      const oi = items.map(i => ({ 
+        product_id: i.product.id, 
+        name: i.product.name, 
+        price: Number(i.product.price), 
+        quantity: i.quantity 
+      }));
+
+      // Insertamos a Supabase (hemos removido delivery_zone)
+      const { data: ins, error } = await supabase.from('orders').insert({ 
+        customer_name: form.name, 
+        customer_phone: form.phone, 
+        delivery_address: form.ref, 
+        payment_method: form.pm, 
+        payment_reference: buildRef(am), 
+        payment_screenshot_url: ss, 
+        items: oi, 
+        subtotal: Number(subtotal), 
+        delivery_fee: Number(fee), 
+        total: Number(total), 
+        notas: notas.trim() || null, 
+        scheduled_for: schedType === 'programada' && schedDate && schedTime ? `${schedDate}T${schedTime}` : null, 
+        status: 'recibido' 
+      }).select('id').single();
+      
+      if (error || !ins) { 
+        setStatus('error'); 
+        setErrMsg(error?.message ?? 'Error al procesar pedido'); 
+        return; 
+      }
+      
+      const oid = (ins as { id?: string })?.id;
+      if (saveAddr && gps) { 
+        try { 
+          const l = loadSaved().filter(x => x.label !== addrLabel); 
+          localStorage.setItem(SAVED_KEY, JSON.stringify([{ label: addrLabel, lat: gps.lat, lng: gps.lng, ref: form.ref }, ...l].slice(0, 5))); 
+        } catch { /* ignorar errores de localstorage */ } 
+      }
+      
+      setStatus('success'); 
+      setTimeout(() => { onSuccess(oid!); }, 1500);
+    } catch (err) { 
+      setStatus('error'); 
+      setErrMsg(err instanceof Error ? err.message : 'Error inesperado'); 
+    }
   };
+
   const renderMerchant = (mid: string) => {
     const rows = (list: { icon: typeof Landmark; label: string; val: string }[]) => <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-2.5"><div className="flex items-center gap-2 mb-1"><Building2 className="w-4 h-4 text-gray-400" /><p className="text-xs font-bold text-gray-500 uppercase">Datos para transferir</p></div>{list.map(({ icon: I, label, val }) => <div key={label} className="flex items-center gap-2.5"><I className="w-4 h-4 text-gray-300 flex-shrink-0" /><span className="text-xs text-gray-400">{label}</span><span className="text-sm font-semibold text-gray-900 ml-auto">{val}</span></div>)}</div>;
     switch (mid) {
@@ -78,6 +161,7 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
       default: return null;
     }
   };
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white">
       <div className="px-4 py-3.5 flex items-center gap-3 border-b border-gray-50">{status !== 'success' && <button onClick={onBack} className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center active:scale-90"><ArrowLeft className="w-5 h-5 text-gray-600" /></button>}<h2 className="text-lg font-bold text-gray-900 flex-1">Checkout</h2><button onClick={onClose} className="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center active:scale-90"><X className="w-5 h-5 text-gray-500" /></button></div>
@@ -86,7 +170,7 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
         <div className="space-y-3"><h3 className="text-sm font-bold text-gray-900 uppercase">Datos de entrega</h3>
         {profile ? <div className="flex items-center gap-3 bg-orange-50 border border-orange-100 rounded-xl p-3.5"><div className="w-9 h-9 rounded-full bg-orange-500 flex items-center justify-center text-white font-black text-sm">{profile.name?.charAt(0)?.toUpperCase() ?? '?'}</div><div className="flex-1"><p className="text-sm font-bold text-gray-900">{profile.name}</p><p className="text-xs text-gray-500">{profile.phone}</p></div><span className="text-[10px] font-bold text-orange-600 bg-white border border-orange-200 px-2 py-0.5 rounded-full">Verificado</span></div>
         : <><div><label className="text-xs font-semibold text-gray-400 mb-1.5 block">Nombre</label><div className="relative"><User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" /><input type="text" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Juan Pérez" className="w-full pl-10 pr-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-orange-300 focus:bg-white" /></div></div><div><label className="text-xs font-semibold text-gray-400 mb-1.5 block">Teléfono</label><div className="relative"><Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" /><input type="tel" required value={form.phone} onChange={e => setForm({ ...form, phone: formatPhone(e.target.value) })} placeholder="0414-1234567" maxLength={12} className="w-full pl-10 pr-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm font-mono tracking-wide focus:outline-none focus:border-orange-300 focus:bg-white" /></div></div></>}
-        {(() => { const pz = getProfileZone(profile); return <div className="space-y-3">{pz && <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3"><div className="flex items-center gap-2.5"><MapPin className="w-4 h-4 text-blue-400" /><div><p className="text-sm font-bold text-gray-900">{pz.name}</p><p className="text-xs text-blue-500">Tarifa: ${pz.fee.toFixed(2)}</p></div></div><span className="text-[10px] font-bold text-blue-600 bg-white border border-blue-200 px-2 py-0.5 rounded-full">Tu zona</span></div>}<button type="button" onClick={handleGps} disabled={gpsLoading} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-orange-200 bg-orange-50 text-orange-600 text-sm font-bold active:scale-[0.98] disabled:opacity-60">{gpsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}{gpsLoading ? 'Obteniendo...' : 'Usar GPS'}</button>{gps && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5"><Navigation className="w-4 h-4 text-emerald-500" /><div><p className="text-sm font-bold text-gray-900">{label}</p><p className="text-xs text-emerald-600">Tarifa: ${fee.toFixed(2)}</p></div></div>}{gpsErr && <p className="text-xs text-red-500">{gpsErr}</p>}{!pz && <div><label className="text-xs font-semibold text-gray-400 mb-1.5 block">Zona</label><div className="relative"><MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" /><select value={deliveryZone ?? ''} onChange={e => { setGps(null); const z = DELIVERY_ZONES.find(z => z.id === e.target.value); if (z) onZoneChange(z.id, z.fee, z.name); }} className="w-full pl-10 pr-10 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-orange-300 appearance-none"><option value="">Selecciona</option>{(['cerca', 'media', 'lejos'] as const).map(t => <optgroup key={t} label={ZONE_TIER_LABEL[t]}>{DELIVERY_ZONES.filter(z => z.tier === t).map(z => <option key={z.id} value={z.id}>{z.name} — ${z.fee.toFixed(2)}</option>)}</optgroup>)}</select><ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" /></div></div>}</div>; })()}
+        {(() => { const pz = getProfileZone(profile); return <div className="space-y-3">{pz && <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3"><div className="flex items-center gap-2.5"><MapPin className="w-4 h-4 text-blue-400" /><div><p className="text-sm font-bold text-gray-900">{pz.name}</p><p className="text-xs text-blue-500">Tarifa: ${pz.fee.toFixed(2)}</p></div></div><span className="text-[10px] font-bold text-blue-600 bg-white border border-blue-200 px-2 py-0.5 rounded-full">Tu zona</span></div>}<button type="button" onClick={handleGps} disabled={gpsLoading} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-orange-200 bg-orange-50 text-orange-600 text-sm font-bold active:scale-[0.98] disabled:opacity-60">{gpsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}{gpsLoading ? 'Obteniendo...' : 'Usar GPS'}</button>{gps && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5"><Navigation className="w-4 h-4 text-emerald-500" /><div><p className="text-sm font-bold text-gray-900">{label}</p><p className="text-xs text-emerald-600">Tarifa: ${fee.toFixed(2)}</p></div></div>}{gpsErr && <p className="text-xs text-red-500">{gpsErr}</p>}</div>; })()}
         <div><label className="text-xs font-semibold text-gray-400 mb-1.5 block">Referencia</label><div className="relative"><MapPin className="absolute left-3.5 top-3.5 w-4 h-4 text-gray-300" /><textarea required rows={2} value={form.ref} onChange={e => setForm({ ...form, ref: e.target.value })} placeholder="Torre A piso 3..." className="w-full pl-10 pr-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-sm focus:outline-none focus:border-orange-300 focus:bg-white resize-none" /></div></div>
         {gps && <label className="flex items-center gap-2.5 cursor-pointer"><input type="checkbox" checked={saveAddr} onChange={e => setSaveAddr(e.target.checked)} className="w-4 h-4 accent-orange-500" /><span className="text-xs font-semibold text-gray-600">Guardar ubicación</span></label>}
         {saved.length > 0 && <div className="flex flex-wrap gap-2">{saved.map(a => <button key={a.label} type="button" onClick={() => { setGps({ lat: a.lat, lng: a.lng }); setForm(f => ({ ...f, ref: a.ref })); onZoneChange('gps', gpsDeliveryFee(a.lat, a.lng), 'GPS'); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-xs font-bold"><Bookmark className="w-3 h-3" />{a.label}</button>)}</div>}
@@ -96,8 +180,8 @@ export function CheckoutModal({ open, items, subtotal, discount, couponCode, del
         <div className="bg-gray-50 rounded-2xl p-4 space-y-2"><h3 className="text-sm font-bold text-gray-900 mb-1">Resumen</h3>{items.map(it => <div key={it.product.id} className="flex justify-between text-xs"><span className="text-gray-500">{it.quantity}x {it.product.name}</span><span className="font-semibold text-gray-600">${(Number(it.product.price) * it.quantity).toFixed(2)}</span></div>)}<div className="pt-2 mt-2 border-t border-gray-100 space-y-1.5"><div className="flex justify-between text-xs"><span className="text-gray-400">Subtotal</span><span className="font-semibold text-gray-600">${subtotal.toFixed(2)}</span></div>{discount > 0 && <div className="flex justify-between text-xs"><span className="text-emerald-600">Descuento</span><span className="font-bold text-emerald-600">-${discount.toFixed(2)}</span></div>}<div className="flex justify-between text-xs"><span className="text-gray-400">Envío</span><span className="font-semibold text-gray-600">{fee > 0 ? `$${fee.toFixed(2)}` : '—'}</span></div><div className="flex justify-between pt-1.5 items-end"><span className="font-bold text-gray-900 text-sm">Total</span><div className="text-right">{am?.currency === 'BSV' ? <><p className="font-black text-orange-500 text-2xl leading-none">Bs. {(total * rate).toFixed(2)}</p><p className="text-[11px] text-gray-400">${total.toFixed(2)} USD</p></> : <><p className="font-black text-orange-500 text-2xl leading-none">${total.toFixed(2)}</p><p className="text-[11px] text-gray-400">Bs. {(total * rate).toFixed(2)}</p></>}</div></div></div></div>
         {suggested.length > 0 && <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none scroll-smooth snap-x">{suggested.map(p => <div key={p.id} className="snap-start flex-shrink-0 w-36 rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm"><div className="h-20 w-full overflow-hidden bg-gray-100">{p.image_url ? <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" loading="lazy" /> : <div className="w-full h-full flex items-center justify-center text-2xl opacity-30">🍽</div>}</div><div className="p-2.5 space-y-1.5"><p className="text-xs font-bold text-gray-900 line-clamp-2">{p.name}</p><div className="flex items-center justify-between"><span className="text-sm font-black text-orange-500">${Number(p.price).toFixed(2)}</span><button type="button" onClick={() => { const f = products.find(x => x.id === p.id); if (f?.is_available) onAddProduct(f); }} className="w-7 h-7 rounded-full bg-orange-500 text-white flex items-center justify-center active:scale-90"><Plus className="w-4 h-4" strokeWidth={2.5} /></button></div></div></div>)}</div>}
         {status === 'error' && errMsg && <div className="bg-red-50 border border-red-100 rounded-xl p-3"><p className="text-sm font-bold text-red-600">{errMsg}</p></div>}
-        {!isKitchenOpen() && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3"><AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" /><div><p className="text-sm font-bold text-amber-800">Cocina cerrada</p><p className="text-xs text-amber-600">11:30 AM - 10:30 PM</p></div></div>}
-        <button type="submit" disabled={status === 'submitting' || !items.length || !isKitchenOpen()} className="w-full py-3.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-base active:scale-[0.98] shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">{status === 'submitting' ? <><Loader2 className="w-5 h-5 animate-spin" /> Procesando...</> : !isKitchenOpen() ? <><Clock className="w-5 h-5" /> Cocina cerrada</> : `Confirmar · $${total.toFixed(2)}`}</button>
+        {!kitchenStatus.open && <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3"><AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" /><div><p className="text-sm font-bold text-amber-800">Cocina cerrada</p><p className="text-xs text-amber-600">{kitchenStatus.label}</p></div></div>}
+        <button type="submit" disabled={status === 'submitting' || !items.length || !kitchenStatus.open} className="w-full py-3.5 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-base active:scale-[0.98] shadow-lg disabled:opacity-50 flex items-center justify-center gap-2">{status === 'submitting' ? <><Loader2 className="w-5 h-5 animate-spin" /> Procesando...</> : !kitchenStatus.open ? <><Clock className="w-5 h-5" /> Cocina cerrada</> : `Confirmar · ${total.toFixed(2)}`}</button>
       </form></div>}
     </div>
   );
