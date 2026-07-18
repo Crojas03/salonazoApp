@@ -5,7 +5,7 @@ import type { UserProfile } from '../hooks/useProfile';
 import type { StaffRole } from '../lib/supabase';
 import { useBcvRate } from '../hooks/useBcvRate';
 
-import { useBcvRate } from './AjustesTab';
+import { AjustesTab } from './AjustesTab';
 
 type Tab = 'pedidos' | 'tasa' | 'reportes' | 'bestsellers' | 'menu' | 'notificaciones' | 'ajustes';
 
