@@ -17,12 +17,13 @@ export type BcvRateData = {
   friday_date?: string;
 };
 
+// Dejamos un valor inicial genérico mayor a cero para el arranque pasivo
 const FALLBACK: BcvRateData = {
-  rate: 45.50, 
+  rate: 732.48, 
   rate_date: new Date().toISOString().split('T')[0], 
   status: 'pending_approval',
   consensus_count: 0, 
-  sources: { DolarApi: 45.50, MonitorDivisas: 45.50, PyDolarVzla: 45.50 }, 
+  sources: { DolarApi: null, MonitorDivisas: null, PyDolarVzla: null }, 
   matching_sources: [],
   alert_active: false, 
   approved_by: null, 
@@ -50,9 +51,9 @@ export function BcvRateProvider({ children }: { children: ReactNode }) {
       if (data?.value) {
         const parsed = data.value as BcvRateData;
         
-        // Cortacircuitos defensivo ante valores corruptos en Base de Datos
-        if (!parsed.rate || parsed.rate > 150 || parsed.rate <= 0) {
-          parsed.rate = 45.50;
+        // SIN TOPES: Solo valida que exista un número real y sea mayor a cero
+        if (!parsed.rate || !Number.isFinite(parsed.rate) || parsed.rate <= 0) {
+          parsed.rate = 732.48; // Respaldar con la tasa base solo en caso de error crítico (ej: cero o nulo)
         }
         setRateData(parsed);
       }
@@ -75,7 +76,8 @@ export function BcvRateProvider({ children }: { children: ReactNode }) {
       });
       if (resp.ok) {
         const data = await resp.json() as BcvRateData;
-        if (data && data.rate && data.rate < 150) {
+        // SIN TOPES: Permite cualquier valor devuelto por la Edge Function siempre que sea mayor a cero
+        if (data && data.rate && data.rate > 0) {
           setRateData(data);
           return data;
         }
@@ -129,7 +131,7 @@ export function BcvRateProvider({ children }: { children: ReactNode }) {
 
   const value: BcvRateContextValue = {
     rateData,
-    rate: rateData?.rate || 45.50,
+    rate: rateData?.rate || 732.48,
     loading,
     runConsensus,
     approveRate,
