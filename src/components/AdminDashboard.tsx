@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ArrowLeft, ChefHat, BarChart3, TrendingUp, UtensilsCrossed, Bell, Loader2, Radio, Phone, MapPin, Clock, X, Check, ChevronRight, Plus, Pencil, Trash2, Pause, Play, Star, Tag, DollarSign, ShoppingBag, Calendar, Filter, AlertCircle, Save, BadgePercent, RefreshCw, AlertTriangle, Lock } from 'lucide-react';
+import { ArrowLeft, ChefHat, BarChart3, TrendingUp, UtensilsCrossed, Bell, Loader2, Radio, Phone, MapPin, Clock, X, Check, ChevronRight, Plus, Pencil, Trash2, Pause, Play, Star, Tag, DollarSign, ShoppingBag, Calendar, Filter, AlertCircle, Save, BadgePercent, RefreshCw, AlertTriangle, Lock, Settings } from 'lucide-react';
 import { supabase, type OrderRow, type Product, type Category, type NotificationTemplate, STATUS_FLOW, STATUS_CONFIG, KITCHEN_ADVANCE_LABEL } from '../lib/supabase';
 import type { UserProfile } from '../hooks/useProfile';
 import type { StaffRole } from '../lib/supabase';
 import { useBcvRate } from '../hooks/useBcvRate';
 
-type Tab = 'pedidos' | 'tasa' | 'reportes' | 'bestsellers' | 'menu' | 'notificaciones';
+import { useBcvRate } from './AjustesTab';
+
+type Tab = 'pedidos' | 'tasa' | 'reportes' | 'bestsellers' | 'menu' | 'notificaciones' | 'ajustes';
 
 type P = { profile: UserProfile; onBack: () => void; staffRoles: StaffRole[] };
 
@@ -19,6 +21,7 @@ export function AdminDashboard({ profile, onBack, staffRoles }: P) {
     { id: 'bestsellers', label: 'Best-Sellers', Icon: TrendingUp, adminOnly: true },
     { id: 'menu', label: 'Menú', Icon: UtensilsCrossed, adminOnly: true },
     { id: 'notificaciones', label: 'Notif.', Icon: Bell, adminOnly: true },
+    { id: 'ajustes', label: 'Ajustes', Icon: Settings, adminOnly: true },
   ];
   const visibleTabs = tabs.filter(t => !t.adminOnly || isAdmin);
 
@@ -39,6 +42,7 @@ export function AdminDashboard({ profile, onBack, staffRoles }: P) {
         {tab === 'bestsellers' && <BestSellersTab />}
         {tab === 'menu' && <MenuTab />}
         {tab === 'notificaciones' && <NotificacionesTab />}
+        {tab === 'ajustes' && <AjustesTab />}
       </div>
     </div>
   );
@@ -514,8 +518,7 @@ function TasaBcvTab({ profile }: { profile: UserProfile }) {
         <p className="text-[10px] text-gray-500">Consenso analizado sobre {rateData.consensus_count}/3 fuentes activas. Se requiere que al menos 2 coincidan plenamente.</p>
         <div className="space-y-2">
           {['DolarApi', 'MonitorDivisas', 'PyDolarVzla'].map(name => {
-            const sourceObj = rateData.sources?.[name]; 
-            const val = typeof sourceObj === "object" && sourceObj !== null ? sourceObj.rate : sourceObj;
+            const val = rateData.sources?.[name];
             const isMatch = rateData.matching_sources?.includes(name);
             return (
               <div key={name} className="flex items-center justify-between p-3 rounded-xl bg-gray-800/50 border border-gray-800">
@@ -544,3 +547,4 @@ function TasaBcvTab({ profile }: { profile: UserProfile }) {
     </div>
   );
 }
+
